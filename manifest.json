@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "LPU Internet Auto Login",
+  "version": "2.0.0",
+  "description": "Premium UI + single-click auto login to LPU internet from any tab.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://10.10.0.1/*",
+    "https://internet.lpu.in/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "128": "icon.png",
+    "48": "icon.png",
+    "32": "icon.png"
+  }
+}
