@@ -9,11 +9,18 @@
     "scripting"
   ],
   "host_permissions": [
+    "http://10.10.0.1/*",
     "https://10.10.0.1/*",
+    "http://internet.lpu.in/*",
     "https://internet.lpu.in/*"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "128": "icon.png",
+      "48": "icon.png",
+      "32": "icon.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
