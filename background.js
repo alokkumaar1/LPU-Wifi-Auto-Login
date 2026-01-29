@@ -1,53 +1,84 @@
-
-const LPU_LOGIN_URL = "https://10.10.0.1/24online/webpages/client.jsp";
+const LPU_LOGIN_URL = "http://10.10.0.1/24online/webpages/client.jsp";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "CONNECT" && message.account) {
-    handleConnect(message.account);
+  console.log("bg:onMessage", message);
+  if (!message || message.action !== "CONNECT" || !message.account) {
+    console.warn("Ignored message", message);
+    return;
   }
+  handleConnect(message.account);
 });
 
 function handleConnect(account) {
-  chrome.tabs.query({ url: "https://10.10.0.1/*" }, tabs => {
-    if (tabs && tabs.length > 0) {
-      const tab = tabs[0];
-      chrome.tabs.update(tab.id, { active: true, url: LPU_LOGIN_URL }, () => {
-        waitAndRun(tab.id, account);
-      });
+  chrome.tabs.query({}, tabs => {
+    if (chrome.runtime.lastError) {
+      console.error("tabs.query error:", chrome.runtime.lastError);
+      return;
+    }
+
+    const portalTab = (tabs || []).find(t => {
+      try { return t.url && t.url.includes("10.10.0.1"); } catch (e) { return false; }
+    });
+
+    if (portalTab) {
+      chrome.tabs.update(portalTab.id, { active: true, url: LPU_LOGIN_URL }, tabCallback);
     } else {
-      chrome.tabs.create({ url: LPU_LOGIN_URL, active: true }, tab => {
-        waitAndRun(tab.id, account);
-      });
+      chrome.tabs.create({ url: LPU_LOGIN_URL, active: true }, tabCallback);
+    }
+
+    function tabCallback(tab) {
+      if (chrome.runtime.lastError) {
+        console.error("tabs.update/create error:", chrome.runtime.lastError);
+        return;
+      }
+      if (!tab || !tab.id) {
+        console.error("No tab returned from create/update", tab);
+        return;
+      }
+      waitAndRun(tab.id, account);
     }
   });
 }
 
 function waitAndRun(tabId, account) {
-  const MAX_ATTEMPTS = 30; // ~30 seconds
+  const MAX_ATTEMPTS = 30;
   const INTERVAL_MS = 1000;
   let attempts = 0;
 
   const intervalId = setInterval(() => {
     attempts++;
     chrome.tabs.get(tabId, tab => {
+      if (chrome.runtime.lastError) {
+        console.error("tabs.get error:", chrome.runtime.lastError);
+        clearInterval(intervalId);
+        return;
+      }
       if (!tab) {
         clearInterval(intervalId);
         return;
       }
       if (tab.status === "complete") {
+        console.log("Tab complete, injecting into", tabId, tab.url);
         chrome.scripting.executeScript(
           {
             target: { tabId },
             func: injectedAutoLogin,
             args: [account.username, account.password]
           },
-          () => {}
+          (results) => {
+            if (chrome.runtime.lastError) {
+              console.error("scripting.executeScript error:", chrome.runtime.lastError);
+            } else {
+              console.log("injection result:", results);
+            }
+          }
         );
         clearInterval(intervalId);
       }
     });
 
     if (attempts >= MAX_ATTEMPTS) {
+      console.warn("waitAndRun timed out for tab", tabId);
       clearInterval(intervalId);
     }
   }, INTERVAL_MS);
@@ -55,6 +86,7 @@ function waitAndRun(tabId, account) {
 
 // Runs inside the LPU page
 function injectedAutoLogin(username, password) {
+  // ...existing code...
   console.log("Injected auto-login running on", location.href);
 
   function tryFillAndLogin() {
@@ -84,61 +116,41 @@ function injectedAutoLogin(username, password) {
       document.querySelector('button[name*="login" i]') ||
       document.querySelector('button');
 
-    console.log("tryFillAndLogin found:", { userField, passField, tncCheckbox, loginBtn });
-
     if (!userField || !passField) {
       return false;
     }
 
     userField.focus();
     userField.value = username;
-
     passField.focus();
     passField.value = password;
 
-    if (tncCheckbox && !tncCheckbox.checked) {
-      tncCheckbox.click();
-    }
-
-    if (loginBtn) {
-      setTimeout(() => loginBtn.click(), 300);
-    }
-
+    if (tncCheckbox && !tncCheckbox.checked) tncCheckbox.click();
+    if (loginBtn) setTimeout(() => loginBtn.click(), 300);
     return true;
   }
 
   function clickConnectIfLogoutPage() {
     const href = location.href || "";
     if (!href.includes("logout")) return false;
-
     const connectBtn = Array.from(
       document.querySelectorAll('button, input[type="button"], input[type="submit"]')
     ).find(el => {
       const txt = (el.innerText || el.value || "").toLowerCase();
       return txt.includes("connect");
     });
-
-    if (connectBtn) {
-      console.log("On logout/connect page, clicking Connect button");
-      connectBtn.click();
-      return true;
-    }
+    if (connectBtn) { connectBtn.click(); return true; }
     return false;
   }
 
   if (clickConnectIfLogoutPage()) {
     let attempts = 0;
-    const maxAttempts = 25;
     const intId = setInterval(() => {
       attempts++;
-      if (tryFillAndLogin()) {
-        clearInterval(intId);
-      }
-      if (attempts >= maxAttempts) {
-        clearInterval(intId);
-      }
+      if (tryFillAndLogin() || attempts > 25) clearInterval(intId);
     }, 1000);
   } else {
     tryFillAndLogin();
   }
 }
+// ...existing code...
